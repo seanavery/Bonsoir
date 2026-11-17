@@ -25,6 +25,10 @@ class BonsoirServiceDiscovery: BonsoirAction {
     /// Contains all services whose hostnames are currently resolving.
     private var pendingAddressResolution: [String: BonsoirService] = [:]
 
+    /// Contains the services being resolved that the browser has not found, since
+    /// `findService` cannot match their reply.
+    private var pendingUndiscoveredResolution: [String: BonsoirService] = [:]
+
     /// Initializes this class.
     public init(id: Int, printLogs: Bool, onDispose: @escaping () -> Void, messenger: FlutterBinaryMessenger, type: String) {
         self.type = type
@@ -116,11 +120,13 @@ class BonsoirServiceDiscovery: BonsoirAction {
     }
     
     /// Resolves a service.
+    ///
+    /// The service does not have to have been found by the browser first:
+    /// `DNSServiceResolve` only needs its name and type, so a caller that already
+    /// knows them can resolve it without browsing.
     public func resolveService(name: String, type: String) -> Bool {
-        guard let service = findService(name, type) else {
-            onError(message: Generated.discoveryUndiscoveredServiceResolveFailed, parameters: [name, type])
-            return false
-        }
+        let discoveredService = findService(name, type)
+        let service = discoveredService ?? BonsoirService(name: name, type: type, port: 0, attributes: [:])
         var sdRef: DNSServiceRef? = nil
         let error = DNSServiceResolve(&sdRef, 0, 0, name, type, "local.", BonsoirServiceDiscovery.resolveCallback, Unmanaged.passUnretained(self).toOpaque())
         if error != kDNSServiceErr_NoError {
@@ -134,6 +140,9 @@ class BonsoirServiceDiscovery: BonsoirAction {
         // in between. Ordering it this way keeps that from becoming a trap if the
         // delivery queue ever changes.
         pendingResolution.append(sdRef!)
+        if discoveredService == nil {
+            pendingUndiscoveredResolution[BonsoirServiceDiscovery.resolutionKey(for: sdRef)] = service
+        }
 
         // Replies arrive on the main queue, which is where `services`, the
         // bookkeeping below and the browse handler already live — and dns_sd.h
@@ -142,6 +151,7 @@ class BonsoirServiceDiscovery: BonsoirAction {
         let queueError = DNSServiceSetDispatchQueue(sdRef, DispatchQueue.main)
         if queueError != kDNSServiceErr_NoError {
             onSuccess(eventId: Generated.discoveryServiceResolveFailed, service: service, parameters: [queueError])
+            pendingUndiscoveredResolution.removeValue(forKey: BonsoirServiceDiscovery.resolutionKey(for: sdRef))
             stopResolution(sdRef: sdRef)
             return false
         }
@@ -196,6 +206,7 @@ class BonsoirServiceDiscovery: BonsoirAction {
         }
         pendingResolution.removeAll()
         pendingAddressResolution.removeAll()
+        pendingUndiscoveredResolution.removeAll()
         services.removeAll()
         if [.setup, .ready].contains(browser.state) {
             browser.cancel()
@@ -215,8 +226,8 @@ class BonsoirServiceDiscovery: BonsoirAction {
             return
         }
 
-        var service: BonsoirService?
-        if let fullName, let serviceData = ServiceResolution.parseBonjourFqdn(ServiceResolution.unescapeAscii(String(cString: fullName))) {
+        var service = discovery.pendingUndiscoveredResolution.removeValue(forKey: BonsoirServiceDiscovery.resolutionKey(for: sdRef))
+        if service == nil, let fullName, let serviceData = ServiceResolution.parseBonjourFqdn(ServiceResolution.unescapeAscii(String(cString: fullName))) {
             service = discovery.findService(serviceData.0, serviceData.1)
         }
         if let service, errorCode == kDNSServiceErr_NoError {

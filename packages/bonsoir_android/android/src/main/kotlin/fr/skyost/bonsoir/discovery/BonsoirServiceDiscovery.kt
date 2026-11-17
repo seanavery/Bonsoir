@@ -228,18 +228,16 @@ class BonsoirServiceDiscovery(
     /**
      * Resolves the given service.
      *
+     * The service does not have to have been discovered first: NSD resolves it from its
+     * name and type alone, so a caller that already knows them can resolve it without
+     * discovering.
+     *
      * @param name The service name.
      * @param type The service type.
      */
     fun resolveService(name: String, type: String) {
         val bonsoirService = findService(name, type)
-        if (bonsoirService == null) {
-            onError(
-                logMessages[Generated.discoveryUndiscoveredServiceResolveFailed]!!,
-                listOf(name, type)
-            )
-            return
-        }
+            ?: BonsoirService(name, type, 0, emptyList(), null, hashMapOf())
         val listener = BonsoirDiscoveryResolveListener(
             id,
             { _: NsdServiceInfo, errorCode: Int ->

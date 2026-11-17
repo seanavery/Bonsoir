@@ -88,6 +88,16 @@ await Future<void>.delayed(Duration(seconds: 5));
 await discovery.stop();
 ```
 
+If you already know the name of the service you're looking for, you can resolve it without browsing
+(on Android, iOS and macOS) :
+
+```dart
+BonsoirDiscovery discovery = BonsoirDiscovery(type: type);
+await discovery.initialize(); // No need to call `discovery.start()`.
+// Listen to `discovery.eventStream` for `BonsoirDiscoveryServiceResolvedEvent`, then :
+await BonsoirService(name: 'My wonderful service', type: type, port: 0).resolve(discovery.serviceResolver);
+```
+
 If you want a <q>full</q> example, don't hesitate to check [this one](https://github.com/Skyost/Bonsoir/tree/main/packages/bonsoir/example) on Github.
 
 > [!NOTE]

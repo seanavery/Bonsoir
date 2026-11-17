@@ -199,6 +199,30 @@ await discovery.start();
 await discovery.stop();
 ```
 
+## Resolve a service you already know
+
+If you already know the name of the service you're looking for, you don't need to browse for it.
+Browsing asks every service of that type on the network to answer, whereas resolving only asks the
+one you name. Initialize a discovery without starting it, and resolve the service directly :
+
+```dart
+BonsoirDiscovery discovery = BonsoirDiscovery(type: '_wonderful-service._tcp');
+await discovery.initialize();
+
+discovery.eventStream!.listen((event) {
+  if (event is BonsoirDiscoveryServiceResolvedEvent) {
+    print('Service resolved : ${event.service.toJson()}');
+  }
+});
+
+// There is no need to call `discovery.start()`.
+BonsoirService service = BonsoirService(name: 'My wonderful service', type: discovery.type, port: 0);
+await service.resolve(discovery.serviceResolver);
+```
+
+This is supported on Android, iOS and macOS. On other platforms, the service has to be discovered
+first.
+
 ## Notes
 
 Discovery event cycles are platform-dependent. Bonsoir emits events as soon as the
